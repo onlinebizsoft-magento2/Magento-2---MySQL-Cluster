@@ -300,7 +300,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             strripos($sqlQuery, 'DROP') === false &&
             strripos($sqlQuery, 'CREATE') === false &&
             strripos($sqlQuery, 'search_tmp') === false &&
-            php_sapi_name() != 'cli') {
+            php_sapi_name() != 'cli' &&
+            !(isset($_SERVER["HTTP_REFERER"]) && strripos($_SERVER["HTTP_REFERER"], 'admin'))) {
 
 
             $this->isSlaveConnected = true;
