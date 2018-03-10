@@ -125,7 +125,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
      * User-provided configuration slave-servers
      * @var array
      */
-    protected $_slaveConfig = array();
+    protected $_slaveConfig = null;
 
     /**
      * The current bunch of SQL is using Read Only (Slave) database connection
@@ -273,7 +273,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             //Cut slave server configuration
             if ( isset( $config['slave-servers'] ) && count($config['slave-servers'])) {
 
-                $this->_slaveConfig = $config['slave-servers'][0];
+                //Pickup random slave server
+                $this->_slaveConfig = $config['slave-servers'][round( rand(0, count($config['slave-servers']) - 1 ))];
                 $this->_slaveConfig['options']          = $options;
                 $this->_slaveConfig['driver_options']   = $driverOptions;
                 unset($config['slave-servers']);
@@ -293,6 +294,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
      */
     protected function isReadOnlyRequest( $sqlQuery )
     {
+
         if( strripos($sqlQuery, 'SELECT') !== false &&
             strripos($sqlQuery, 'INSERT') === false &&
             strripos($sqlQuery, 'UPDATE') === false &&
@@ -301,7 +303,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             strripos($sqlQuery, 'CREATE') === false &&
             strripos($sqlQuery, 'search_tmp') === false &&
             php_sapi_name() != 'cli' &&
-            (isset($_SERVER["HTTP_COOKIE"]) && strripos($_SERVER["HTTP_COOKIE"], 'admin') === false)) {
+            isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === "GET" &&
+            (!isset($_SERVER["HTTP_COOKIE"]) || isset($_SERVER["HTTP_COOKIE"]) && strripos($_SERVER["HTTP_COOKIE"], 'admin') === false)) {
             
             $this->isSlaveConnected = true;
 
@@ -473,7 +476,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
         // create PDO connection
         $q = $this->_profiler->queryStart('connect', \Zend_Db_Profiler::CONNECT);
 
-        if ( $this->isSlaveConnected === true ) {
+        if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig) ) {
 
             // add the persistence flag if we find it in our config array
             if (isset($this->_slaveConfig['persistent']) && ($this->_slaveConfig['persistent'] == true)) {
@@ -489,7 +492,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
 
         }
         try {
-            if ( $this->isSlaveConnected === true ) {
+            if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig)  ) {
 
                 $this->_connectionSlave = new \PDO(
                     $dsn,
@@ -512,7 +515,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
 
             $this->_profiler->queryEnd($q);
 
-            if ( $this->isSlaveConnected === true ) {
+            if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig)  ) {
 
                 // set the PDO connection to perform case-folding on array keys, or not
                 $this->_connectionSlave->setAttribute(\PDO::ATTR_CASE, $this->_caseFolding);
