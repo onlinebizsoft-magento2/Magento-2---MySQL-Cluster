@@ -302,6 +302,17 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     protected function isReadOnlyRequest( $sqlQuery )
     {
 
+        $isExcept = false;
+        $exceptions = ['customer', 'checkout'];
+        foreach ( $exceptions as $e ) {
+
+            if ( strstr($_SERVER['REQUEST_URI'], $e) === false) {
+
+                $isExcept = true;
+            }
+
+        }
+
         if( $this->isSlaveLocked === false &&
             !empty($this->_slaveConfig) &&
             strripos($sqlQuery, 'SELECT') !== false &&
@@ -312,8 +323,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             strripos($sqlQuery, 'CREATE') === false &&
             strripos($sqlQuery, 'search_tmp') === false &&
             php_sapi_name() != 'cli' &&
-            isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === "GET" &&
-            (!isset($_SERVER["HTTP_COOKIE"]) || isset($_SERVER["HTTP_COOKIE"]) && strripos($_SERVER["HTTP_COOKIE"], 'admin') === false)) {
+            $isExcept === false &&
+            isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === "GET" ) {
             
             $this->isSlaveConnected = true;
 
