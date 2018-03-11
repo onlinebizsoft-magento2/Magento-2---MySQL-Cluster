@@ -133,6 +133,13 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
      */
     protected $isSlaveConnected = false;
 
+
+    /**
+     * Lock slave if it is a transaction
+     * @var bool
+     */
+    protected $isSlaveLocked = false;
+
     /**
      * Database connection to read only database
      * @var object|resource|null
@@ -295,7 +302,9 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     protected function isReadOnlyRequest( $sqlQuery )
     {
 
-        if( strripos($sqlQuery, 'SELECT') !== false &&
+        if( $this->isSlaveLocked === false &&
+            !empty($this->_slaveConfig) &&
+            strripos($sqlQuery, 'SELECT') !== false &&
             strripos($sqlQuery, 'INSERT') === false &&
             strripos($sqlQuery, 'UPDATE') === false &&
             strripos($sqlQuery, 'DELETE') === false &&
@@ -326,6 +335,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function beginTransaction()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = true;
         if ($this->_isRolledBack) {
             throw new \Exception(AdapterInterface::ERROR_ROLLBACK_INCOMPLETE_MESSAGE);
         }
@@ -347,6 +357,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function commit()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = false;
         if ($this->_transactionLevel === 1 && !$this->_isRolledBack) {
             $this->logger->startTimer();
             parent::commit();
@@ -369,6 +380,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function rollBack()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = false;
         if ($this->_transactionLevel === 1) {
             $this->logger->startTimer();
             parent::rollBack();
@@ -4034,12 +4046,12 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function getConnection()
     {
         $this->_connect();
-        return $this->isSlaveConnected === true ? $this->_connectionSlave : $this->_connection;
+        return $this->isSlaveConnected === true && $this->isSlaveLocked === false ? $this->_connectionSlave : $this->_connection;
     }
     protected function _dsn()
     {
         // baseline of DSN parts
-        $dsn = $this->isSlaveConnected === true ? $this->_slaveConfig : $this->_config;
+        $dsn = $this->isSlaveConnected === true && $this->_slaveConfig && $this->isSlaveLocked === false ? $this->_slaveConfig : $this->_config;
 
         // don't pass the username, password, charset, persistent and driver_options in the DSN
         unset($dsn['username']);
