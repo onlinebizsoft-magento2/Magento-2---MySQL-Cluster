@@ -125,13 +125,20 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
      * User-provided configuration slave-servers
      * @var array
      */
-    protected $_slaveConfig = array();
+    protected $_slaveConfig = null;
 
     /**
      * The current bunch of SQL is using Read Only (Slave) database connection
      * @var bool
      */
     protected $isSlaveConnected = false;
+
+
+    /**
+     * Lock slave if it is a transaction
+     * @var bool
+     */
+    protected $isSlaveLocked = false;
 
     /**
      * Database connection to read only database
@@ -273,7 +280,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             //Cut slave server configuration
             if ( isset( $config['slave-servers'] ) && count($config['slave-servers'])) {
 
-                $this->_slaveConfig = $config['slave-servers'][0];
+                //Pickup random slave server
+                $this->_slaveConfig = $config['slave-servers'][round( rand(0, count($config['slave-servers']) - 1 ))];
                 $this->_slaveConfig['options']          = $options;
                 $this->_slaveConfig['driver_options']   = $driverOptions;
                 unset($config['slave-servers']);
@@ -293,7 +301,21 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
      */
     protected function isReadOnlyRequest( $sqlQuery )
     {
-        if( strripos($sqlQuery, 'SELECT') !== false &&
+
+        $isExcept = false;
+        $exceptions = ['customer', 'checkout'];
+        foreach ( $exceptions as $e ) {
+
+            if ( strstr($_SERVER['REQUEST_URI'], $e) === false) {
+
+                $isExcept = true;
+            }
+
+        }
+
+        if( $this->isSlaveLocked === false &&
+            !empty($this->_slaveConfig) &&
+            strripos($sqlQuery, 'SELECT') !== false &&
             strripos($sqlQuery, 'INSERT') === false &&
             strripos($sqlQuery, 'UPDATE') === false &&
             strripos($sqlQuery, 'DELETE') === false &&
@@ -301,7 +323,8 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
             strripos($sqlQuery, 'CREATE') === false &&
             strripos($sqlQuery, 'search_tmp') === false &&
             php_sapi_name() != 'cli' &&
-            (isset($_SERVER["HTTP_COOKIE"]) && strripos($_SERVER["HTTP_COOKIE"], 'admin') === false)) {
+            $isExcept === false &&
+            isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] === "GET" ) {
             
             $this->isSlaveConnected = true;
 
@@ -323,6 +346,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function beginTransaction()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = true;
         if ($this->_isRolledBack) {
             throw new \Exception(AdapterInterface::ERROR_ROLLBACK_INCOMPLETE_MESSAGE);
         }
@@ -344,6 +368,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function commit()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = false;
         if ($this->_transactionLevel === 1 && !$this->_isRolledBack) {
             $this->logger->startTimer();
             parent::commit();
@@ -366,6 +391,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function rollBack()
     {
         $this->isSlaveConnected = false;
+        $this->isSlaveLocked    = false;
         if ($this->_transactionLevel === 1) {
             $this->logger->startTimer();
             parent::rollBack();
@@ -473,7 +499,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
         // create PDO connection
         $q = $this->_profiler->queryStart('connect', \Zend_Db_Profiler::CONNECT);
 
-        if ( $this->isSlaveConnected === true ) {
+        if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig) ) {
 
             // add the persistence flag if we find it in our config array
             if (isset($this->_slaveConfig['persistent']) && ($this->_slaveConfig['persistent'] == true)) {
@@ -489,7 +515,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
 
         }
         try {
-            if ( $this->isSlaveConnected === true ) {
+            if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig)  ) {
 
                 $this->_connectionSlave = new \PDO(
                     $dsn,
@@ -512,7 +538,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
 
             $this->_profiler->queryEnd($q);
 
-            if ( $this->isSlaveConnected === true ) {
+            if ( $this->isSlaveConnected === true && !empty($this->_slaveConfig)  ) {
 
                 // set the PDO connection to perform case-folding on array keys, or not
                 $this->_connectionSlave->setAttribute(\PDO::ATTR_CASE, $this->_caseFolding);
@@ -4031,12 +4057,12 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     public function getConnection()
     {
         $this->_connect();
-        return $this->isSlaveConnected === true ? $this->_connectionSlave : $this->_connection;
+        return $this->isSlaveConnected === true && $this->isSlaveLocked === false ? $this->_connectionSlave : $this->_connection;
     }
     protected function _dsn()
     {
         // baseline of DSN parts
-        $dsn = $this->isSlaveConnected === true ? $this->_slaveConfig : $this->_config;
+        $dsn = $this->isSlaveConnected === true && $this->_slaveConfig && $this->isSlaveLocked === false ? $this->_slaveConfig : $this->_config;
 
         // don't pass the username, password, charset, persistent and driver_options in the DSN
         unset($dsn['username']);
