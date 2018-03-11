@@ -303,6 +303,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
     {
 
         $isExcept = false;
+	if ( php_sapi_name() != 'cli' && isset($_SERVER['REQUEST_URI']) ) {
         $exceptions = ['customer', 'checkout'];
         foreach ( $exceptions as $e ) {
 
@@ -311,6 +312,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
                 $isExcept = true;
             }
 
+        }
         }
 
         if( $this->isSlaveLocked === false &&
