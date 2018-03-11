@@ -307,7 +307,7 @@ class Mysql extends \Zend_Db_Adapter_Pdo_Mysql implements AdapterInterface
         $exceptions = ['customer', 'checkout'];
         foreach ( $exceptions as $e ) {
 
-            if ( strstr($_SERVER['REQUEST_URI'], $e) === false) {
+            if ( strstr($_SERVER['REQUEST_URI'], $e) !== false) {
 
                 $isExcept = true;
             }
