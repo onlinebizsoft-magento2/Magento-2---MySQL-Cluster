@@ -2,7 +2,7 @@
     "name": "skynix/m2-mysql-cluster",
     "type": "library",
     "license": "OSL-3.0",
-    "description": "Test",
+    "description": "Magento 2 CE SQL cluster enabled Magento 2 CE to work with database replication",
     "keywords": ["magento2"],
     "authors": [
         {
